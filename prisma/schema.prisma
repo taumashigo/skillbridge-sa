@@ -1,0 +1,409 @@
+// ============================================================
+// SkillBridge SA — Prisma Schema
+// PostgreSQL 15 + pgvector
+// ============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
+}
+
+// ────────────────────────────────────────────────────────────
+// AUTH & USERS
+// ────────────────────────────────────────────────────────────
+
+model User {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email            String    @unique @db.VarChar(255)
+  name             String?   @db.VarChar(255)
+  languagePref     String    @default("en") @map("language_pref") @db.VarChar(10)
+  dataMode         String    @default("standard") @map("data_mode") @db.VarChar(20)
+  consentCv        Boolean   @default(false) @map("consent_cv")
+  consentAnalytics Boolean   @default(false) @map("consent_analytics")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz
+
+  profile            Profile?
+  cvs                Cv[]
+  jobs               Job[]
+  matchReports       MatchReport[]
+  assessments        Assessment[]
+  savedResources     SavedResource[]
+  podcastEpisodes    PodcastEpisode[]
+  podcastBookmarks   PodcastBookmark[]
+  cvOptimisations    CvOptimisation[]
+  portfolioProjects  PortfolioProject[]
+  interviewSessions  InterviewSession[]
+  auditLogs          AuditLog[]
+
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id") @db.Uuid
+  expires      DateTime @db.Timestamptz
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime @db.Timestamptz
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ────────────────────────────────────────────────────────────
+// USER PROFILE (Onboarding)
+// ────────────────────────────────────────────────────────────
+
+model Profile {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid
+  educationLevel  String?  @map("education_level") @db.VarChar(100)
+  yearsExperience Int?     @map("years_experience")
+  industries      String[] @default([])
+  priorRoles      String[] @default([]) @map("prior_roles")
+  skillRatings    Json     @default("{}") @map("skill_ratings")
+  hoursPerWeek    Int      @default(10) @map("hours_per_week")
+  deviceType      String?  @map("device_type") @db.VarChar(50)
+  bandwidth       String?  @db.VarChar(50)
+  budget          String?  @db.VarChar(50)
+  portfolioLinks  Json     @default("[]") @map("portfolio_links")
+  strengths       String[] @default([])
+  interests       String[] @default([])
+  avoidPrefs      String[] @default([]) @map("avoid_prefs")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+// ────────────────────────────────────────────────────────────
+// CVs
+// ────────────────────────────────────────────────────────────
+
+model Cv {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  fileKey          String   @map("file_key") @db.VarChar(500)
+  fileName         String?  @map("file_name") @db.VarChar(255)
+  fileType         String?  @map("file_type") @db.VarChar(50)
+  fileSizeBytes    Int?     @map("file_size_bytes")
+  extractedText    String?  @map("extracted_text")
+  structuredData   Json?    @map("structured_data")
+  // embedding     Unsupported("vector(1536)")? // pgvector — handled via raw SQL
+  redactedSections String[] @default([]) @map("redacted_sections")
+  status           String   @default("uploaded") @db.VarChar(50)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matchReports    MatchReport[]
+  cvOptimisations CvOptimisation[]
+
+  @@index([userId])
+  @@map("cvs")
+}
+
+// ────────────────────────────────────────────────────────────
+// JOBS
+// ────────────────────────────────────────────────────────────
+
+model Job {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  title        String   @db.VarChar(500)
+  description  String?
+  sourceUrl    String?  @map("source_url") @db.VarChar(2000)
+  rawText      String?  @map("raw_text")
+  requirements Json?
+  proficiency  String?  @db.VarChar(50)
+  timeline     String?  @db.VarChar(50)
+  // embedding  Unsupported("vector(1536)")?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  competencyMap     CompetencyMap?
+  matchReports      MatchReport[]
+  assessments       Assessment[]
+  podcastEpisodes   PodcastEpisode[]
+  cvOptimisations   CvOptimisation[]
+  portfolioProjects PortfolioProject[]
+  interviewSessions InterviewSession[]
+
+  @@index([userId])
+  @@map("jobs")
+}
+
+// ────────────────────────────────────────────────────────────
+// COMPETENCY MAPS
+// ────────────────────────────────────────────────────────────
+
+model CompetencyMap {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  jobId        String   @unique @map("job_id") @db.Uuid
+  competencies Json
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("competency_maps")
+}
+
+// ────────────────────────────────────────────────────────────
+// MATCH REPORTS (CV ↔ Job)
+// ────────────────────────────────────────────────────────────
+
+model MatchReport {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  cvId            String?  @map("cv_id") @db.Uuid
+  jobId           String   @map("job_id") @db.Uuid
+  overallScore    Decimal? @map("overall_score") @db.Decimal(5, 2)
+  overlaps        Json?
+  gaps            Json?
+  strengths       Json?
+  recommendations Json?
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cv   Cv?   @relation(fields: [cvId], references: [id], onDelete: SetNull)
+  job  Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("match_reports")
+}
+
+// ────────────────────────────────────────────────────────────
+// ASSESSMENTS
+// ────────────────────────────────────────────────────────────
+
+model Assessment {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  jobId      String   @map("job_id") @db.Uuid
+  competency String   @db.VarChar(255)
+  questions  Json
+  status     String   @default("pending") @db.VarChar(50)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user        User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job         Job                      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  submissions AssessmentSubmission[]
+
+  @@index([userId, jobId])
+  @@map("assessments")
+}
+
+model AssessmentSubmission {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assessmentId String   @map("assessment_id") @db.Uuid
+  answers      Json
+  scores       Json?
+  overallScore Decimal? @map("overall_score") @db.Decimal(5, 2)
+  gapReport    Json?    @map("gap_report")
+  feedback     Json?
+  submittedAt  DateTime @default(now()) @map("submitted_at") @db.Timestamptz
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@map("assessment_submissions")
+}
+
+// ────────────────────────────────────────────────────────────
+// LEARNING RESOURCES
+// ────────────────────────────────────────────────────────────
+
+model LearningResource {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title          String   @db.VarChar(500)
+  type           String   @db.VarChar(50)
+  provider       String?  @db.VarChar(255)
+  url            String?  @db.VarChar(2000)
+  competencies   String[] @default([])
+  difficulty     String?  @db.VarChar(50)
+  estimatedHours Decimal? @map("estimated_hours") @db.Decimal(5, 1)
+  prerequisites  String[] @default([])
+  description    String?
+  // embedding   Unsupported("vector(1536)")?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  savedBy SavedResource[]
+
+  @@map("learning_resources")
+}
+
+model Institution {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String   @db.VarChar(500)
+  url              String?  @db.VarChar(2000)
+  description      String?
+  bestFor          String?  @map("best_for")
+  typicalOfferings String[] @default([]) @map("typical_offerings")
+  recognition      String?
+  category         String?  @db.VarChar(100)
+  region           String?  @db.VarChar(100)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("institutions")
+}
+
+model SavedResource {
+  userId     String   @map("user_id") @db.Uuid
+  resourceId String   @map("resource_id") @db.Uuid
+  notes      String?
+  savedAt    DateTime @default(now()) @map("saved_at") @db.Timestamptz
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource LearningResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@id([userId, resourceId])
+  @@map("saved_resources")
+}
+
+// ────────────────────────────────────────────────────────────
+// PODCAST EPISODES
+// ────────────────────────────────────────────────────────────
+
+model PodcastEpisode {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  jobId     String   @map("job_id") @db.Uuid
+  title     String?  @db.VarChar(500)
+  outline   Json?
+  status    String   @default("generating") @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job       Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  turns     PodcastTurn[]
+  bookmarks PodcastBookmark[]
+
+  @@index([userId])
+  @@map("podcast_episodes")
+}
+
+model PodcastTurn {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  episodeId  String   @map("episode_id") @db.Uuid
+  turnNumber Int      @map("turn_number")
+  speaker    String   @db.VarChar(100)
+  content    String
+  chapter    String?  @db.VarChar(255)
+  isRedirect Boolean  @default(false) @map("is_redirect")
+  audioKey   String?  @map("audio_key") @db.VarChar(500)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  episode   PodcastEpisode    @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  bookmarks PodcastBookmark[]
+
+  @@index([episodeId])
+  @@map("podcast_turns")
+}
+
+model PodcastBookmark {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  episodeId String   @map("episode_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  turnId    String   @map("turn_id") @db.Uuid
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  episode PodcastEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  turn    PodcastTurn    @relation(fields: [turnId], references: [id], onDelete: Cascade)
+
+  @@map("podcast_bookmarks")
+}
+
+// ────────────────────────────────────────────────────────────
+// CV OPTIMISATION
+// ────────────────────────────────────────────────────────────
+
+model CvOptimisation {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  cvId            String?  @map("cv_id") @db.Uuid
+  jobId           String   @map("job_id") @db.Uuid
+  keywordReport   Json?    @map("keyword_report")
+  suggestions     Json?
+  atsVersion      String?  @map("ats_version")
+  humanVersion    String?  @map("human_version")
+  missingSections Json?    @map("missing_sections")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cv   Cv?  @relation(fields: [cvId], references: [id], onDelete: SetNull)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("cv_optimisations")
+}
+
+// ────────────────────────────────────────────────────────────
+// PORTFOLIO PROJECTS
+// ────────────────────────────────────────────────────────────
+
+model PortfolioProject {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  jobId     String   @map("job_id") @db.Uuid
+  title     String   @db.VarChar(500)
+  brief     Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("portfolio_projects")
+}
+
+// ────────────────────────────────────────────────────────────
+// INTERVIEW PRACTICE
+// ────────────────────────────────────────────────────────────
+
+model InterviewSession {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  jobId     String   @map("job_id") @db.Uuid
+  questions Json?
+  answers   Json?
+  feedback  Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("interview_sessions")
+}
+
+// ────────────────────────────────────────────────────────────
+// AUDIT LOG (POPIA)
+// ────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  action       String   @db.VarChar(100)
+  resourceType String   @map("resource_type") @db.VarChar(100)
+  resourceId   String?  @map("resource_id") @db.Uuid
+  metadata     Json?
+  ipAddress    String?  @map("ip_address") @db.VarChar(45)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@map("audit_log")
+}
