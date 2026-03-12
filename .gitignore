@@ -9,3 +9,5 @@ next-env.d.ts
 coverage/
 
 .vercel
+
+.env.local.txt
