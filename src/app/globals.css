@@ -1,85 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:wght@400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ── Base ────────────────────────────────────────────── */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+*{margin:0;padding:0;box-sizing:border-box}
+html{font-size:16px;-webkit-font-smoothing:antialiased}
+body{font-family:'DM Sans',sans-serif;background:#0B1121;color:#F1F5F9}
 
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #2d3f56;
-  border-radius: 3px;
-}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#2D3F56;border-radius:3px}
 
-/* ── Form Elements ───────────────────────────────────── */
-input,
-textarea,
-select {
-  font-family: "DM Sans", sans-serif;
-  background: #1a2332;
-  border: 1px solid #2d3f56;
-  color: #f1f5f9;
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  width: 100%;
-}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideR{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes scaleIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes glow{0%,100%{box-shadow:0 0 20px rgba(34,211,167,.1)}50%{box-shadow:0 0 40px rgba(34,211,167,.2)}}
+@keyframes speakPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
 
-input:focus,
-textarea:focus,
-select:focus {
-  border-color: #22d3a7;
-  box-shadow: 0 0 0 3px rgba(34, 211, 167, 0.15);
-}
+.aFU{animation:fadeUp .5s ease-out forwards}
+.aFI{animation:fadeIn .4s ease-out forwards}
+.aSR{animation:slideR .4s ease-out forwards}
+.aSI{animation:scaleIn .3s ease-out forwards}
+.aP{animation:pulse 2s ease-in-out infinite}
+.aSpin{animation:spin 1s linear infinite}
+.aGlow{animation:glow 3s ease-in-out infinite}
+.skel{background:linear-gradient(90deg,#1A2332 25%,#243044 50%,#1A2332 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:8px}
 
-input::placeholder,
-textarea::placeholder {
-  color: #64748b;
+input,textarea,select{
+  font-family:'DM Sans',sans-serif;
+  background:#1A2332;
+  border:1px solid #2D3F56;
+  color:#F1F5F9;
+  border-radius:10px;
+  padding:10px 14px;
+  font-size:14px;
+  outline:none;
+  transition:border-color .2s,box-shadow .2s;
+  width:100%;
 }
-
-select {
-  cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394A3B8' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  padding-right: 32px;
+input:focus,textarea:focus,select:focus{
+  border-color:#22D3A7;
+  box-shadow:0 0 0 3px rgba(34,211,167,0.15);
 }
-
-/* ── Utility Animations ──────────────────────────────── */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-.skeleton {
-  background: linear-gradient(90deg, #1a2332 25%, #243044 50%, #1a2332 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: 8px;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.spinner {
-  display: inline-block;
-  width: 18px;
-  height: 18px;
-  border: 2px solid currentColor;
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
+input::placeholder,textarea::placeholder{color:#64748B}
+select{
+  cursor:pointer;
+  appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394A3B8' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 12px center;
+  padding-right:32px;
 }
