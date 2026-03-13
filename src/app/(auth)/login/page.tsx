@@ -1,12 +1,12 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { T } from "@/lib/theme/tokens";
 import { I } from "@/lib/theme/icons";
 import { Btn, Card } from "@/components/ui/base";
 
-export default function LoginPage(){
+function LoginContent(){
   const router = useRouter();
   const searchParams = useSearchParams();
   const isVerify = searchParams.get("verify") === "true";
@@ -62,4 +62,8 @@ export default function LoginPage(){
       </>}
     </Card>
   </div>;
+}
+
+export default function LoginPage(){
+  return <Suspense><LoginContent/></Suspense>;
 }
