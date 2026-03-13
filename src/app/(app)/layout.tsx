@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { useSession, signOut } from "next-auth/react";
 import { T } from "@/lib/theme/tokens";
 import { I } from "@/lib/theme/icons";
 
@@ -18,9 +19,12 @@ const navItems = [
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { data: session } = useSession();
   const [sideOpen, setSideOpen] = useState(false);
 
   const isActive = (path: string) => pathname === path;
+
+  const userInitial = session?.user?.email?.[0]?.toUpperCase() || "?";
 
   return <div style={{display:"flex",minHeight:"100vh",background:T.midnight}}>
     {/* Sidebar */}
@@ -35,7 +39,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </button>)}
       </nav>
       <div style={{padding:"12px",borderTop:`1px solid ${T.border}`,marginTop:8}}>
-        <p style={{fontSize:11,color:T.textMut}}>SkillBridge SA v2.0</p>
+        {session?.user?.email && <p style={{fontSize:11,color:T.textSec,marginBottom:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session.user.email}</p>}
+        <button onClick={()=>signOut({callbackUrl:"/"})} style={{background:"none",border:"none",cursor:"pointer",color:T.textMut,fontSize:11,fontFamily:"'DM Sans'",padding:0}}>Sign out</button>
+        <p style={{fontSize:11,color:T.textMut,marginTop:8}}>SkillBridge SA v2.0</p>
         <p style={{fontSize:11,color:T.textMut}}>POPIA Compliant</p>
       </div>
     </aside>
@@ -49,7 +55,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
         <button onClick={()=>setSideOpen(true)} style={{background:"none",border:"none",cursor:"pointer",color:T.textSec,display:"flex",padding:4}}>{I.menu}</button>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{width:32,height:32,borderRadius:"50%",background:T.surfaceLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700}}>T</div>
+          <div style={{width:32,height:32,borderRadius:"50%",background:T.surfaceLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700}}>{userInitial}</div>
         </div>
       </div>
       {children}

@@ -21,6 +21,7 @@ datasource db {
 model User {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email            String    @unique @db.VarChar(255)
+  emailVerified    DateTime? @map("email_verified") @db.Timestamptz
   name             String?   @db.VarChar(255)
   languagePref     String    @default("en") @map("language_pref") @db.VarChar(10)
   dataMode         String    @default("standard") @map("data_mode") @db.VarChar(20)
@@ -42,7 +43,8 @@ model User {
   portfolioProjects  PortfolioProject[]
   interviewSessions  InterviewSession[]
   auditLogs          AuditLog[]
-
+  accounts           Account[]
+  sessions           Session[]
   @@map("users")
 }
 
@@ -51,6 +53,8 @@ model Session {
   sessionToken String   @unique @map("session_token")
   userId       String   @map("user_id") @db.Uuid
   expires      DateTime @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("sessions")
 }
@@ -407,3 +411,23 @@ model AuditLog {
   @@index([userId])
   @@map("audit_log")
 }
+model Account {
+  id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String  @map("user_id") @db.Uuid
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
