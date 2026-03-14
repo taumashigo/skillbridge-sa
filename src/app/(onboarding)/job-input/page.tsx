@@ -209,12 +209,7 @@ export default function JobInputPage(){
 
     {/* Submit Button */}
     <Btn size="lg" style={{width:"100%"}} disabled={!consent||isProcessing||status==="done"} onClick={handleSubmit}>
-      {isProcessing ? (
-        <span style={{display:"flex",alignItems:"center",gap:8}}>
-          <span className="aSpin" style={{display:"inline-block",width:18,height:18,border:`2px solid ${T.midnight}`,borderTopColor:"transparent",borderRadius:"50%"}}/>
-          {progress}
-        </span>
-      ) : status === "done" ? "Redirecting..." : "Analyse & Build My Bridge \u2192"}
+      {isProcessing ? "Processing..." : status === "done" ? "Redirecting..." : "Analyse & Build My Bridge \u2192"}
     </Btn>
   </div>;
 }
