@@ -1,23 +1,30 @@
-import { apiOk, apiErr, parseBody, rateLimit, auditLog } from "@/lib/utils/api";
-import { JobInputSchema } from "@/lib/validators/schemas";
+import { apiOk, apiErr, auditLog } from "@/lib/utils/api";
 import { generateCompetencyMap, analyseMatch, ingestJobFromURL } from "@/lib/services/competency-engine";
 import prisma from "@/lib/db/prisma";
-
-const getUserId = () => "demo-user-id";
+import { requireAuth } from "@/lib/auth/session";
 
 export async function POST(request: Request) {
-  const userId = getUserId();
-  const parsed = await parseBody(request, JobInputSchema);
-  if ("error" in parsed) return parsed.error;
+  let userId: string;
+  try {
+    userId = await requireAuth();
+  } catch {
+    return apiErr("UNAUTHORIZED", "Please sign in", [], 401);
+  }
 
-  const rl = rateLimit(`job-ingest:${userId}`, 5, 60000);
-  if (!rl.allowed) return apiErr("RATE_LIMITED", `Too many requests. Retry in ${rl.retryAfter}s`, [], 429);
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return apiErr("VALIDATION_ERROR", "Invalid request body");
+  }
 
-  let description = parsed.data.description;
+  const { title, description: inputDescription, sourceUrl, proficiency = "intermediate", timeline = "1_month" } = body;
+
+  let description = inputDescription;
 
   // If URL provided, try to fetch job text
-  if (parsed.data.sourceUrl && !description) {
-    const result = await ingestJobFromURL(parsed.data.sourceUrl);
+  if (sourceUrl && !description) {
+    const result = await ingestJobFromURL(sourceUrl);
     if (result.success) {
       description = result.text;
     } else {
@@ -33,27 +40,31 @@ export async function POST(request: Request) {
   const job = await prisma.job.create({
     data: {
       userId,
-      title: parsed.data.title,
+      title: title || "Untitled Role",
       description,
-      sourceUrl: parsed.data.sourceUrl,
+      sourceUrl: sourceUrl || null,
       rawText: description,
-      proficiency: parsed.data.proficiency,
-      timeline: parsed.data.timeline,
+      proficiency,
+      timeline,
     },
   });
 
   try {
-    // Generate competency map (inline, ~5-15s)
+    // Generate competency map (~5-15s)
     const compResult = await generateCompetencyMap(
-      parsed.data.title, description, parsed.data.proficiency, `comp-${job.id}`
+      title || "Untitled Role", description, proficiency, `comp-${job.id}`
     );
 
     await prisma.competencyMap.create({
       data: { jobId: job.id, competencies: compResult as any },
     });
 
-    // Auto-match against latest CV if available
-    let matchReport = null;
+    // Auto-match against latest parsed CV
+    let matchScore: number | null = null;
+    let gaps: any[] = [];
+    let matchOverlaps: any[] = [];
+    let atsKeywords: any = null;
+
     const latestCv = await prisma.cv.findFirst({
       where: { userId, status: "parsed" },
       orderBy: { createdAt: "desc" },
@@ -61,11 +72,14 @@ export async function POST(request: Request) {
 
     if (latestCv?.structuredData) {
       const matchResult = await analyseMatch(
-        latestCv.structuredData, compResult.competencies, parsed.data.title, `match-${job.id}`
+        latestCv.structuredData, compResult.competencies, title || "Untitled Role", `match-${job.id}`
       );
-      matchReport = await prisma.matchReport.create({
+
+      await prisma.matchReport.create({
         data: {
-          userId, cvId: latestCv.id, jobId: job.id,
+          userId,
+          cvId: latestCv.id,
+          jobId: job.id,
           overallScore: matchResult.matchReport.overallScore,
           overlaps: matchResult.matchReport.overlaps as any,
           gaps: matchResult.matchReport.gaps as any,
@@ -73,6 +87,11 @@ export async function POST(request: Request) {
           recommendations: matchResult.matchReport.atsKeywordCoverage as any,
         },
       });
+
+      matchScore = matchResult.matchReport.overallScore;
+      gaps = matchResult.matchReport.gaps || [];
+      matchOverlaps = matchResult.matchReport.overlaps || [];
+      atsKeywords = matchResult.matchReport.atsKeywordCoverage || null;
     }
 
     await auditLog(prisma, { userId, action: "JOB_INGESTED", resourceType: "job", resourceId: job.id });
@@ -80,13 +99,18 @@ export async function POST(request: Request) {
     return apiOk({
       id: job.id,
       title: job.title,
+      competencies: compResult.competencies,
       competencyCount: compResult.competencies.length,
-      matchScore: matchReport?.overallScore || null,
+      roleSummary: compResult.roleSummary,
+      senioritySignals: compResult.senioritySignals,
+      matchScore,
+      gaps,
+      overlaps: matchOverlaps,
+      atsKeywords,
       status: "complete",
     }, 201);
-
   } catch (error: any) {
-    // Job was created but analysis failed — return partial success
+    console.error("[Job Ingest] Error:", error);
     return apiOk({
       id: job.id,
       title: job.title,

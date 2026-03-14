@@ -6,7 +6,17 @@ import { I } from "@/lib/theme/icons";
 import { Btn, Card, Badge, TabBar } from "@/components/ui/base";
 import { showToast } from "@/components/ui/extras";
 
-type ParseStatus = "idle" | "uploading" | "parsing" | "done" | "error";
+type Status = "idle" | "uploading" | "parsing_cv" | "analysing_job" | "matching" | "done" | "error";
+
+const STATUS_MESSAGES: Record<Status, string> = {
+  idle: "",
+  uploading: "Uploading your CV to secure storage...",
+  parsing_cv: "AI is reading your CV... This may take 20-30 seconds.",
+  analysing_job: "Extracting competencies from the job post...",
+  matching: "Comparing your CV against the role requirements...",
+  done: "Analysis complete! Redirecting to dashboard...",
+  error: "",
+};
 
 export default function JobInputPage(){
   const router = useRouter();
@@ -15,84 +25,81 @@ export default function JobInputPage(){
   const[prof,setProf]=useState("intermediate");const[tl,setTl]=useState("1_month");
   const[cv,setCv]=useState<File|null>(null);
   const[consent,setConsent]=useState(false);
-  const[status,setStatus]=useState<ParseStatus>("idle");
-  const[progress,setProgress]=useState("");
+  const[status,setStatus]=useState<Status>("idle");
   const[error,setError]=useState("");
+
+  const isProcessing = !["idle","done","error"].includes(status);
 
   const handleSubmit = async () => {
     if (!consent) return;
     setError("");
 
     try {
-      // Step 1: Upload CV if provided
+      // Step 1: Upload CV
       let cvId: string | null = null;
       if (cv) {
         setStatus("uploading");
-        setProgress("Uploading your CV...");
-
         const formData = new FormData();
         formData.append("file", cv);
 
-        const uploadRes = await fetch("/api/cv/upload", {
-          method: "POST",
-          body: formData,
-        });
+        const uploadRes = await fetch("/api/cv/upload", { method: "POST", body: formData });
         const uploadData = await uploadRes.json();
-
-        if (!uploadRes.ok) {
-          throw new Error(uploadData.error?.message || "Failed to upload CV");
-        }
+        if (!uploadRes.ok) throw new Error(uploadData.error?.message || "Failed to upload CV");
         cvId = uploadData.data?.id;
-        showToast("CV uploaded successfully", "success");
 
         // Step 2: Parse CV with AI
-        if (cvId) {
-          setStatus("parsing");
-          setProgress("AI is analysing your CV... This may take 15-30 seconds.");
-
-          const parseRes = await fetch("/api/cv/parse", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ cvId }),
-          });
-          const parseData = await parseRes.json();
-
-          if (!parseRes.ok) {
-            throw new Error(parseData.error?.message || "Failed to parse CV");
-          }
-          showToast(`Found ${parseData.data?.skillsFound || 0} skills in your CV`, "success");
-        }
+        setStatus("parsing_cv");
+        const parseRes = await fetch("/api/cv/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cvId }),
+        });
+        const parseData = await parseRes.json();
+        if (!parseRes.ok) throw new Error(parseData.error?.message || "Failed to parse CV");
+        showToast(`Found ${parseData.data?.skillsFound || 0} skills in your CV`, "success");
       }
 
-      // Step 3: Store job details (for now, in sessionStorage for dashboard)
-      const jobData = {
-        title: jt || "Job Analysis",
-        description: jd,
-        url: ju,
-        level: prof,
-        timeline: tl,
-        cvId,
-      };
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("skillbridge_job", JSON.stringify(jobData));
+      // Step 3: Analyse job post (if description provided)
+      const jobDescription = mode === "manual" ? jd : "";
+      const jobUrl = mode === "url" ? ju : "";
+
+      if (jobDescription.length > 50 || jobUrl) {
+        setStatus("analysing_job");
+        const jobRes = await fetch("/api/job/ingest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: jt || "Job Analysis",
+            description: jobDescription || undefined,
+            sourceUrl: jobUrl || undefined,
+            proficiency: prof,
+            timeline: tl,
+          }),
+        });
+        const jobData = await jobRes.json();
+        if (!jobRes.ok) throw new Error(jobData.error?.message || "Failed to analyse job");
+
+        // Store results for dashboard
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("skillbridge_job", JSON.stringify(jobData.data));
+        }
+
+        if (jobData.data?.matchScore) {
+          showToast(`Match score: ${jobData.data.matchScore}% — ${jobData.data.competencyCount} competencies found`, "success");
+        } else {
+          showToast(`${jobData.data?.competencyCount || 0} competencies extracted`, "success");
+        }
       }
 
       setStatus("done");
-      setProgress("Analysis complete! Redirecting to dashboard...");
-
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 1500);
+      setTimeout(() => router.push("/dashboard"), 1500);
 
     } catch (err: any) {
       setStatus("error");
       setError(err.message || "Something went wrong");
-      setProgress("");
       showToast(err.message || "Something went wrong", "error");
     }
   };
-
-  const isProcessing = status === "uploading" || status === "parsing";
 
   return <div style={{minHeight:"100vh",padding:24,maxWidth:700,margin:"0 auto",background:T.midnight}}>
     <div className="aFU" style={{marginBottom:32,paddingTop:40}}>
@@ -136,14 +143,7 @@ export default function JobInputPage(){
       <h3 style={{fontSize:16,fontWeight:700,marginBottom:16,display:"flex",alignItems:"center",gap:8}}>{I.upload} Upload Your CV</h3>
       <div
         onClick={()=>!isProcessing && document.getElementById("cv-up")?.click()}
-        style={{
-          border:`2px dashed ${cv?T.accent:T.border}`,
-          borderRadius:14,padding:32,textAlign:"center",
-          cursor:isProcessing?"not-allowed":"pointer",
-          background:cv?T.accentGlow2:"transparent",
-          transition:"all .3s",
-          opacity:isProcessing?0.6:1,
-        }}
+        style={{border:`2px dashed ${cv?T.accent:T.border}`,borderRadius:14,padding:32,textAlign:"center",cursor:isProcessing?"not-allowed":"pointer",background:cv?T.accentGlow2:"transparent",transition:"all .3s",opacity:isProcessing?0.6:1}}
       >
         <input id="cv-up" type="file" accept=".pdf,.docx" hidden onChange={e=>setCv(e.target.files?.[0]||null)} disabled={isProcessing}/>
         {cv?<div className="aSI">
@@ -178,15 +178,17 @@ export default function JobInputPage(){
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <span className="aSpin" style={{display:"inline-block",width:20,height:20,border:`2px solid ${T.accent}`,borderTopColor:"transparent",borderRadius:"50%",flexShrink:0}}/>
           <div>
-            <p style={{fontSize:14,fontWeight:600,color:T.accent}}>{status === "uploading" ? "Uploading..." : "AI Analysing..."}</p>
-            <p style={{fontSize:13,color:T.textSec}}>{progress}</p>
+            <p style={{fontSize:14,fontWeight:600,color:T.accent}}>
+              {status === "uploading" ? "Step 1/3: Uploading" : status === "parsing_cv" ? "Step 2/3: Parsing CV" : status === "analysing_job" ? "Step 3/3: Analysing Job" : "Processing..."}
+            </p>
+            <p style={{fontSize:13,color:T.textSec}}>{STATUS_MESSAGES[status]}</p>
           </div>
         </div>
       </Card>
     )}
 
-    {/* Error Display */}
-    {error && (
+    {/* Error */}
+    {status === "error" && (
       <Card style={{marginBottom:20,border:`1px solid ${T.error}`,background:`${T.error}10`}}>
         <p style={{fontSize:14,color:T.error,fontWeight:600,marginBottom:4}}>Error</p>
         <p style={{fontSize:13,color:T.textSec}}>{error}</p>
@@ -194,7 +196,7 @@ export default function JobInputPage(){
       </Card>
     )}
 
-    {/* Success Display */}
+    {/* Success */}
     {status === "done" && (
       <Card style={{marginBottom:20,border:`1px solid ${T.success}`,background:`${T.success}10`}} className="aSI">
         <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -207,7 +209,7 @@ export default function JobInputPage(){
       </Card>
     )}
 
-    {/* Submit Button */}
+    {/* Submit */}
     <Btn size="lg" style={{width:"100%"}} disabled={!consent||isProcessing||status==="done"} onClick={handleSubmit}>
       {isProcessing ? "Processing..." : status === "done" ? "Redirecting..." : "Analyse & Build My Bridge \u2192"}
     </Btn>
