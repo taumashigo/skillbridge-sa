@@ -4,6 +4,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { T } from "@/lib/theme/tokens";
 import { I } from "@/lib/theme/icons";
+import { CoachDrawer, CoachButton } from "@/components/coach/CoachDrawer";
 
 const navItems = [
   {id:"dashboard",path:"/dashboard",icon:I.home,label:"Dashboard"},
@@ -21,9 +22,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [sideOpen, setSideOpen] = useState(false);
+  const [coachOpen, setCoachOpen] = useState(false);
 
   const isActive = (path: string) => pathname === path;
-
   const userInitial = session?.user?.email?.[0]?.toUpperCase() || "?";
 
   return <div style={{display:"flex",minHeight:"100vh",background:T.midnight}}>
@@ -60,5 +61,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
       {children}
     </main>
+
+    {/* Coach */}
+    <CoachButton onClick={() => setCoachOpen(true)} />
+    <CoachDrawer open={coachOpen} onClose={() => setCoachOpen(false)} />
+    {coachOpen && <div onClick={() => setCoachOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.3)",zIndex:999}} />}
   </div>;
 }
