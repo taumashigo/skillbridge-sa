@@ -1,28 +1,39 @@
-import { apiOk, apiErr, rateLimit } from "@/lib/utils/api";
+import { apiOk, apiErr } from "@/lib/utils/api";
 import { callClaude } from "@/lib/ai/claude-client";
 import { interviewQuestionsPrompt } from "@/lib/ai/prompts";
 import prisma from "@/lib/db/prisma";
-
-const getUserId = () => "demo-user-id";
+import { requireAuth } from "@/lib/auth/session";
 
 export async function POST(request: Request) {
-  const userId = getUserId();
-  const { jobId } = await request.json();
+  let userId: string;
+  try { userId = await requireAuth(); } catch { return apiErr("UNAUTHORIZED", "Please sign in", [], 401); }
 
-  const rl = rateLimit(`interview:${userId}`, 3, 60000);
-  if (!rl.allowed) return apiErr("RATE_LIMITED", "Too many requests", [], 429);
+  let body: any;
+  try { body = await request.json(); } catch { return apiErr("VALIDATION_ERROR", "Invalid request body"); }
+
+  const { jobId } = body;
+  if (!jobId) return apiErr("VALIDATION_ERROR", "jobId is required");
 
   const compMap = await prisma.competencyMap.findUnique({ where: { jobId } });
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!compMap || !job) return apiErr("NOT_FOUND", "Job or competencies not found", [], 404);
 
-  const competencies: any[] = (compMap.competencies as any)?.competencies || [];
-  const prompt = interviewQuestionsPrompt(competencies, job.title, job.proficiency || "intermediate");
-  const { data } = await callClaude({ system: prompt.system, userMessage: prompt.userMessage, requestId: `interview-${jobId}` });
+  try {
+    const competencies: any[] = (compMap.competencies as any)?.competencies || [];
+    const prompt = interviewQuestionsPrompt(competencies, job.title, job.proficiency || "intermediate");
+    const { data } = await callClaude({ system: prompt.system, userMessage: prompt.userMessage, maxTokens: 4096, requestId: `interview-${jobId}` });
 
-  const session = await prisma.interviewSession.create({
-    data: { userId, jobId, questions: data as any },
-  });
+    const session = await prisma.interviewSession.create({
+      data: { userId, jobId, questions: data as any },
+    });
 
-  return apiOk({ sessionId: session.id, questions: (data as any).questions, generalTips: (data as any).generalTips }, 201);
+    return apiOk({
+      sessionId: session.id,
+      questions: (data as any).questions || [],
+      generalTips: (data as any).generalTips || [],
+    }, 201);
+  } catch (error: any) {
+    console.error("[Interview Start] Error:", error);
+    return apiErr("GENERATION_ERROR", error.message || "Failed to generate interview questions", [], 500);
+  }
 }
