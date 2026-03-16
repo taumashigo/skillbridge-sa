@@ -1,40 +1,52 @@
-import { apiOk, apiErr, parseBody, rateLimit } from "@/lib/utils/api";
-import { CvOptimiseSchema } from "@/lib/validators/schemas";
+import { apiOk, apiErr } from "@/lib/utils/api";
 import { callClaude } from "@/lib/ai/claude-client";
 import { cvOptimisationPrompt } from "@/lib/ai/prompts";
 import prisma from "@/lib/db/prisma";
-
-const getUserId = () => "demo-user-id";
+import { requireAuth } from "@/lib/auth/session";
 
 export async function POST(request: Request) {
-  const userId = getUserId();
-  const parsed = await parseBody(request, CvOptimiseSchema);
-  if ("error" in parsed) return parsed.error;
+  let userId: string;
+  try { userId = await requireAuth(); } catch { return apiErr("UNAUTHORIZED", "Please sign in", [], 401); }
 
-  const rl = rateLimit(`cvopt:${userId}`, 3, 60000);
-  if (!rl.allowed) return apiErr("RATE_LIMITED", "Too many requests", [], 429);
+  let body: any;
+  try { body = await request.json(); } catch { return apiErr("VALIDATION_ERROR", "Invalid request body"); }
 
-  const cv = await prisma.cv.findFirst({ where: { id: parsed.data.cvId, userId, status: "parsed" } });
-  if (!cv) return apiErr("NOT_FOUND", "Parsed CV not found", [], 404);
+  const { jobId } = body;
+  if (!jobId) return apiErr("VALIDATION_ERROR", "jobId is required");
 
-  const compMap = await prisma.competencyMap.findUnique({ where: { jobId: parsed.data.jobId } });
-  const job = await prisma.job.findUnique({ where: { id: parsed.data.jobId } });
+  const cv = await prisma.cv.findFirst({ where: { userId, status: "parsed" }, orderBy: { createdAt: "desc" } });
+  if (!cv) return apiErr("NOT_FOUND", "No parsed CV found. Upload and parse your CV first.", [], 404);
+
+  const compMap = await prisma.competencyMap.findUnique({ where: { jobId } });
+  const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!compMap || !job) return apiErr("NOT_FOUND", "Job or competency map not found", [], 404);
 
-  const competencies: any[] = (compMap.competencies as any)?.competencies || [];
-  const prompt = cvOptimisationPrompt(cv.structuredData, competencies, job.title);
-  const { data } = await callClaude({ system: prompt.system, userMessage: prompt.userMessage, maxTokens: 8192, requestId: `cvopt-${cv.id}` });
+  try {
+    const competencies: any[] = (compMap.competencies as any)?.competencies || [];
+    const prompt = cvOptimisationPrompt(cv.structuredData, competencies, job.title);
+    const { data } = await callClaude({ system: prompt.system, userMessage: prompt.userMessage, maxTokens: 8192, requestId: `cvopt-${cv.id}` });
 
-  const opt = await prisma.cvOptimisation.create({
-    data: {
-      userId, cvId: cv.id, jobId: job.id,
+    const opt = await prisma.cvOptimisation.create({
+      data: {
+        userId, cvId: cv.id, jobId: job.id,
+        keywordReport: (data as any).keywordReport,
+        suggestions: (data as any).bulletRewrites,
+        atsVersion: (data as any).atsVersion,
+        humanVersion: (data as any).humanVersion,
+        missingSections: (data as any).missingSections,
+      },
+    });
+
+    return apiOk({
+      id: opt.id,
       keywordReport: (data as any).keywordReport,
-      suggestions: (data as any).bulletRewrites,
-      atsVersion: (data as any).atsVersion,
-      humanVersion: (data as any).humanVersion,
-      missingSections: (data as any).missingSections,
-    },
-  });
-
-  return apiOk({ id: opt.id, keywordReport: (data as any).keywordReport, suggestions: (data as any).bulletRewrites }, 201);
+      bulletRewrites: (data as any).bulletRewrites || [],
+      missingSections: (data as any).missingSections || [],
+      atsVersion: (data as any).atsVersion || "",
+      humanVersion: (data as any).humanVersion || "",
+    }, 201);
+  } catch (error: any) {
+    console.error("[CV Optimise] Error:", error);
+    return apiErr("OPTIMISE_ERROR", error.message || "Failed to optimise CV", [], 500);
+  }
 }
